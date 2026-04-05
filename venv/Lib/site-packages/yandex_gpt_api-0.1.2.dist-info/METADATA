@@ -1,0 +1,383 @@
+Metadata-Version: 2.4
+Name: yandex-gpt-api
+Version: 0.1.2
+Summary: Библиотека для работы с Yandex GPT API с поддержкой синхронного и асинхронного режимов, реализацией потоковой генерации текста и возможностью распознавания речи с определением говорящего
+Project-URL: Homepage, https://github.com/xsa-dev/yandex-gpt-api
+Project-URL: Bug Tracker, https://github.com/xsa-dev/yandex-gpt-api/issues
+Author-email: Alexey Savin <saleksey67@gmail.com>
+License: MIT
+Requires-Python: >=3.7
+Requires-Dist: httpx>=0.23.0
+Requires-Dist: python-dotenv>=0.19.0
+Requires-Dist: requests>=2.25.0
+Requires-Dist: termcolor>=2.3.0
+Description-Content-Type: text/markdown
+
+# Библиотека для работы с Yandex GPT API и SpeechKit API
+
+Эта библиотека предоставляет удобные функции для взаимодействия с Yandex GPT API и Yandex SpeechKit API. 
+Она поддерживает как синхронный, так и асинхронный режимы работы, включая потоковую генерацию текста
+и расширенные возможности по распознаванию речи с определением говорящего.
+
+## Особенности
+
+### Yandex GPT API
+- **Синхронный режим** - для простых запросов с блокирующим выполнением
+- **Асинхронный режим** - для эффективной обработки нескольких запросов без блокировки
+- **Потоковый режим** - для получения ответов по мере их генерации (синхронный)
+- **Асинхронный потоковый режим** - с использованием библиотеки httpx
+- **Обработка JSON-ответов** - корректное извлечение текста из структурированных ответов
+- **Параллельное выполнение запросов** - для одновременной обработки нескольких промптов
+- **Отладочный режим** - для детального анализа запросов и ответов
+
+### Yandex SpeechKit STT v3 API
+- **Распознавание аудиофайлов** - поддержка отправки аудиофайлов на распознавание
+- **Синхронный режим** - для простой отправки файлов и получения результатов
+- **Асинхронный режим** - для более эффективной работы без блокировки исполнения
+- **Гибкие настройки распознавания** - полная поддержка параметров API (модель, язык, формат и т.д.)
+- **Работа с разными форматами аудио** - MP3, WAV и другие поддерживаемые форматы
+- **Анализ речи** - возможность использовать различные аналитические функции API
+- **Разметка говорящих** - поддержка диаризации речи с идентификацией разных говорящих
+- **Работа с метками каналов** - поддержка параметра channel_tag для разделения разных дикторов
+- **Автоматическая конвертация аудио** - преобразование стерео в моно для разметки говорящих
+
+## Требования
+
+- Python 3.7+
+- Библиотеки:
+  - requests - для синхронных запросов
+  - httpx - для асинхронных запросов
+  - python-dotenv - для работы с переменными окружения
+  - asyncio - для асинхронного выполнения
+
+## Установка
+
+```
+pip install yandex-gpt-api
+```
+
+## Настройка
+
+Для работы с API необходимо создать файл `.env` в корне проекта со следующими переменными:
+
+```env
+API_KEY=ваш_api_ключ
+FOLDER_ID=идентификатор_ваш_папки_в_облаке
+# ИЛИ
+IAM_TOKEN=ваш_iam_токен
+FOLDER_ID=идентификатор_ваш_папки_в_облаке
+```
+
+## Примеры использования
+
+### GPT API
+
+#### Синхронный режим
+
+```python
+from yandex_gpt_api import gpt
+import json
+import os
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+# Подготовка сообщений
+messages = [
+    {"role": "system", "text": "Вы - опытный научный сотрудник"},
+    {"role": "user", "text": "Расскажи кратко о квантовой механике"}
+]
+
+# Выполнение запроса
+response = gpt(headers, messages, temperature=0.7, max_tokens=1000)
+
+# Разбор ответа
+data = json.loads(response)
+if 'result' in data and 'alternatives' in data['result']:
+    for alt in data['result']['alternatives']:
+        if 'message' in alt and 'text' in alt['message']:
+            text = alt['message']['text']
+            print(f"Ответ: {text}")
+```
+
+#### Асинхронный потоковый режим
+
+```python
+import asyncio
+from yandex_gpt_api import gpt_streaming_httpx
+import os
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+# Подготовка сообщений
+messages = [
+    {"role": "system", "text": "Вы - полезный ассистент"},
+    {"role": "user", "text": "Составь список из 5 интересных фактов о космосе"}
+]
+
+async def main():
+    # Получаем ответ по частям
+    print("Получаем ответ: ", end="", flush=True)
+    async for chunk in gpt_streaming_httpx(headers, messages):
+        print(chunk, end="", flush=True)
+    print()
+
+asyncio.run(main())
+```
+
+### SpeechKit STT v3 API
+
+#### Синхронный режим распознавания файла
+
+```python
+from yandex_gpt_api import stt_recognize_file, stt_get_recognition
+import json
+import os
+import time
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+# Путь к аудиофайлу
+file_path = 'путь_к_аудио_файлу.mp3'
+
+# Настройка параметров распознавания
+audio_format = {
+    "containerAudio": {
+        "containerAudioType": "MP3"
+    }
+}
+
+language_restriction = {
+    "restrictionType": "WHITELIST",
+    "languageCode": ["ru-RU"]
+}
+
+# Отправляем файл на распознавание
+response = stt_recognize_file(
+    auth_headers=headers,
+    content=file_path,
+    audio_format=audio_format,
+    language_restriction=language_restriction
+)
+
+# Получаем ID операции
+operation_id = response['id']
+print(f"Операция запущена с ID: {operation_id}")
+
+# Ждем, пока файл будет обработан (обычно нужно 30+ секунд)
+print("Ожидание обработки файла...")
+time.sleep(30)
+
+# Получаем результат распознавания
+recognition_result = stt_get_recognition(headers, operation_id)
+
+# Извлекаем распознанный текст
+if 'final' in recognition_result:
+    alternatives = recognition_result['final'].get('alternatives', [])
+    if alternatives:
+        text = alternatives[0].get('text', '')
+        print(f"Распознанный текст: {text}")
+```
+
+#### Асинхронный режим распознавания файла
+
+```python
+import asyncio
+from yandex_gpt_api import stt_recognize_file_async, stt_get_recognition_async
+import os
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+async def recognize_audio():
+    # Путь к аудиофайлу
+    file_path = 'путь_к_аудио_файлу.mp3'
+    
+    # Настройка параметров распознавания
+    audio_format = {
+        "containerAudio": {
+            "containerAudioType": "MP3"
+        }
+    }
+    
+    language_restriction = {
+        "restrictionType": "WHITELIST",
+        "languageCode": ["ru-RU"]
+    }
+    
+    # Отправляем файл на распознавание асинхронно
+    response = await stt_recognize_file_async(
+        auth_headers=headers,
+        content=file_path,
+        audio_format=audio_format,
+        language_restriction=language_restriction
+    )
+    
+    operation_id = response['id']
+    print(f"Операция запущена с ID: {operation_id}")
+    
+    # Ждем обработки файла
+    await asyncio.sleep(30)
+    
+    # Получаем результат распознавания асинхронно
+    recognition_result = await stt_get_recognition_async(headers, operation_id)
+    
+    # Извлекаем распознанный текст
+    if 'final' in recognition_result:
+        alternatives = recognition_result['final'].get('alternatives', [])
+        if alternatives:
+            text = alternatives[0].get('text', '')
+            print(f"Распознанный текст: {text}")
+
+asyncio.run(recognize_audio())
+```
+
+#### Распознавание с разметкой говорящих (диаризация)
+
+```python
+from yandex_gpt_api import stt_recognize_with_speaker_labeling, stt_get_recognition
+import json
+import os
+import time
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+# Путь к аудиофайлу
+file_path = 'путь_к_аудио_файлу.mp3'
+
+# Отправляем файл на распознавание с разметкой говорящих
+# Параметр channel_tag можно использовать для метки каналов
+response = stt_recognize_with_speaker_labeling(
+    auth_headers=headers,
+    content=file_path,
+    channel_tag="1",  # Метка канала
+    convert_stereo_to_mono=True  # Автоматически преобразовать стерео в моно если нужно
+)
+
+# Получаем ID операции
+operation_id = response['id']
+print(f"Операция запущена с ID: {operation_id}")
+
+# Ждем, пока файл будет обработан
+print("Ожидание обработки файла...")
+time.sleep(30)
+
+# Получаем результат распознавания
+recognition_result = stt_get_recognition(headers, operation_id)
+
+# Проверяем наличие channel_tag в результате
+if 'result' in recognition_result and 'channelTag' in recognition_result['result']:
+    channel_tag = recognition_result['result']['channelTag']
+    print(f"Метка канала: {channel_tag}")
+
+# Извлекаем распознанный текст
+if 'result' in recognition_result and 'final' in recognition_result['result']:
+    alternatives = recognition_result['result']['final'].get('alternatives', [])
+    if alternatives:
+        text = alternatives[0].get('text', '')
+        print(f"Распознанный текст: {text}")
+```
+
+#### Асинхронное распознавание с разметкой говорящих
+
+```python
+import asyncio
+from yandex_gpt_api import stt_recognize_with_speaker_labeling_async, stt_get_recognition_async
+import os
+
+# Настройка аутентификации
+if os.getenv('API_KEY'):
+    api_key = os.environ['API_KEY']
+    headers = {'Authorization': f'Api-Key {api_key}'}
+else:
+    iam_token = os.environ['IAM_TOKEN']
+    headers = {'Authorization': f'Bearer {iam_token}'}
+
+async def recognize_audio_with_speaker_labeling():
+    # Путь к аудиофайлу
+    file_path = 'путь_к_аудио_файлу.mp3'
+    
+    # Отправляем файл на распознавание с разметкой говорящих
+    response = await stt_recognize_with_speaker_labeling_async(
+        auth_headers=headers,
+        content=file_path,
+        channel_tag="1",  # Метка канала
+        convert_stereo_to_mono=True  # Автоматически преобразовать стерео в моно если нужно
+    )
+    
+    operation_id = response['id']
+    print(f"Операция запущена с ID: {operation_id}")
+    
+    # Ждем результатов асинхронно
+    print("Ожидание обработки файла...")
+    await asyncio.sleep(30)  # Даем время на обработку
+    
+    # Получаем результаты распознавания
+    recognition_result = await stt_get_recognition_async(headers, operation_id)
+    
+    if 'result' in recognition_result and 'channelTag' in recognition_result['result']:
+        channel_tag = recognition_result['result']['channelTag']
+        print(f"Метка канала: {channel_tag}")
+    
+    if 'result' in recognition_result and 'final' in recognition_result['result']:
+        alternatives = recognition_result['result']['final'].get('alternatives', [])
+        if alternatives:
+            text = alternatives[0].get('text', '')
+            print(f"Распознанный текст: {text}")
+
+# Запуск асинхронной функции
+asyncio.run(recognize_audio_with_speaker_labeling())
+```
+
+## Примеры
+
+В репозитории есть примеры использования библиотеки:
+
+1. `async_chat_example.py` - демонстрирует использование асинхронных функций GPT API, включая потоковый режим
+2. `test_yandex_gpt_api.py` - автотест для проверки работы функций GPT API
+3. `test_yandex_stt_api.py` - автотест для проверки работы функций SpeechKit STT API
+
+## Запуск примеров и тестов
+
+```bash
+# Запуск асинхронного чата
+python async_chat_example.py
+
+# Запуск автотестов GPT API
+python test_yandex_gpt_api.py
+
+# Запуск автотестов SpeechKit STT API
+python test_yandex_stt_api.py
+```
+
+## Лицензия
+
+MIT
